@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>七夕·拼图（Qixi Puzzle）— 多关卡自适应</title>
+  <style>
+    :root{
+      /* Grid */
+      --cols: 4;
+      --rows: 4;
+      --board-size: min(70vmin, 640px);
+      --gap: 0px;
+      --pieceW: calc((var(--board-size) - (var(--cols) + 1)*var(--gap)) / var(--cols));
+      --pieceH: calc((var(--board-size) - (var(--rows) + 1)*var(--gap)) / var(--rows));
+
+      /* Qixi theme */
+      --night-1: #0b0f2a;   /* deep indigo */
+      --night-2: #1b1236;   /* plum */
+      --glow:    #ffb86b;   /* lantern glow */
+      --gold:    #ffd966;   /* soft gold */
+      --rose:    #ff6b9a;   /* rose pink */
+      --ink:     #e6e6f0;   /* text */
+      --panel:   rgba(255,255,255,0.06);
+    }
+
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; padding:24px; color:var(--ink);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "STKaiti", KaiTi, "Songti SC", "Noto Serif CJK SC", serif;
+      display:grid; place-items:center; gap:16px; position:relative; overflow:hidden;
+      min-height:100svh;
+      background:
+        radial-gradient(1200px 600px at 70% -20%, rgba(255,255,255,0.08), transparent 60%),
+        radial-gradient(900px 600px at 20% 10%, rgba(255,107,154,0.10), transparent 60%),
+        linear-gradient(160deg, var(--night-1) 0%, var(--night-2) 70%);
+    }
+
+    /* Subtle starfield */
+    .stars, .stars::after{
+      content:""; position:fixed; inset:-200px; pointer-events:none;
+      background:
+        radial-gradient(2px 2px at 20% 30%, rgba(255,255,255,.9), transparent 50%),
+        radial-gradient(1px 1px at 40% 80%, rgba(255,255,255,.8), transparent 60%),
+        radial-gradient(1.5px 1.5px at 70% 20%, rgba(255,255,255,.7), transparent 60%),
+        radial-gradient(1px 1px at 85% 60%, rgba(255,255,255,.75), transparent 60%),
+        radial-gradient(1.2px 1.2px at 10% 70%, rgba(255,255,255,.85), transparent 60%);
+      opacity:.5;
+      animation: twinkle 9s linear infinite;
+    }
+    .stars::after{ filter:blur(1px); opacity:.35; animation-duration: 13s; }
+    @keyframes twinkle{ 0%,100%{transform:translateY(0)} 50%{transform:translateY(8px)} }
+
+    h1{margin:0; font-weight:700; letter-spacing:.5px; text-shadow:0 2px 10px rgba(0,0,0,.35)}
+    .title{
+      display:flex; align-items:baseline; gap:12px;
+      background:linear-gradient( to right, rgba(255,255,255,.06), transparent );
+      padding:10px 14px; border-radius:14px; backdrop-filter: blur(3px);
+      justify-content:center;
+      text-align:center;
+      width:100%;
+    }
+    .title .seal{ font-size:14px; padding:4px 8px; border:1px solid rgba(255,217,102,.5); border-radius:999px; color:var(--gold) }
+
+    .sub{opacity:.85; font-size:14px; margin-top:-4px; text-align:center; width:100%}
+
+    /* Board panel */
+    .panel{ background:var(--panel); border:1px solid rgba(255,255,255,.08); box-shadow:0 18px 60px rgba(0,0,0,.35); border-radius:18px; }
+
+    .board{width:var(--board-size); height:var(--board-size); display:grid; gap:var(--gap);
+      grid-template-columns:repeat(var(--cols),1fr); grid-template-rows:repeat(var(--rows),1fr);
+      padding:var(--gap); position:relative; overflow:hidden; border-radius:18px; margin:0 auto; }
+
+    .cell{ border:1.5px dashed rgba(255,217,102,.35); border-radius:12px; background:rgba(255,255,255,0.02) }
+
+    .tray{ display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; min-height:calc(var(--pieceH) + 14px); align-items:center; padding:12px; border-radius:14px;
+      background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+      border:1px solid rgba(255,255,255,.08);
+      justify-content:center;
+    }
+
+    .piece{ width:var(--pieceW); height:var(--pieceH); border-radius:12px; cursor:grab; user-select:none;
+      outline:1px solid rgba(255,255,255,.12); box-shadow:0 8px 20px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.05);
+      background-repeat:no-repeat; background-color:rgba(0,0,0,.15);
+      transition: transform .12s ease, box-shadow .12s ease, outline-color .2s ease;
+    }
+    .piece:hover{ transform:translateY(-2px); box-shadow:0 12px 28px rgba(0,0,0,.45) }
+    .cell .piece{ width:100%; height:100% }
+    .piece.hide{ opacity:0.01 }
+
+    .final{ position:absolute; inset:0; border-radius:18px; background-size:contain; background-repeat:no-repeat; background-position:center; opacity:0;
+      transform:scale(.9) rotateY(90deg); animation:reveal 1.25s forwards ease-in-out; background-color:rgba(0,0,0,.1);
+      box-shadow: inset 0 0 60px rgba(255,184,107,.15), inset 0 0 120px rgba(255,184,107,.09);
+    }
+    @keyframes reveal{ 0%{opacity:0;transform:scale(.9) rotateY(90deg)} 50%{opacity:.9;transform:scale(1.04) rotateY(0)} 100%{opacity:1;transform:scale(1) rotateY(0)} }
+
+    /* Floating lanterns (decor only) */
+    .lantern{ position:fixed; bottom:-120px; width:46px; height:58px; left:10%; border-radius:12px 12px 16px 16px/14px 14px 22px 22px; opacity:.85;
+      background: radial-gradient(20px 16px at 50% 38%, rgba(255,255,255,.9), rgba(255,184,107,.6), rgba(243,159,134,.55)),
+                  linear-gradient(180deg, rgba(255,250,230,.7), rgba(255,184,107,.85) 60%, rgba(240,120,90,.9));
+      box-shadow: 0 0 12px rgba(255,184,107,.6), 0 0 28px rgba(255,184,107,.35);
+      animation: floatUp linear infinite;
+    }
+    .lantern::before{ content:""; position:absolute; top:-28px; left:50%; width:1.5px; height:28px; transform:translateX(-50%); background:rgba(255,255,255,.25) }
+    .lantern::after{ content:""; position:absolute; bottom:-12px; left:50%; width:10px; height:12px; transform:translateX(-50%);
+      background: linear-gradient(180deg, rgba(255,200,120,.9), rgba(255,120,80,.75)); border-radius:0 0 8px 8px; filter:blur(.2px); }
+    @keyframes floatUp{ from{ transform:translate(-20px, 0) rotate(-1.5deg) } to{ transform:translate(10px, -110vh) rotate(1.5deg) } }
+
+    /* Petals for celebration */
+    .petal{ position:fixed; top:-40px; width:12px; height:18px; pointer-events:none; opacity:.9;
+      background: radial-gradient(12px 18px at 50% 40%, rgba(255,255,255,.9), rgba(255,107,154,.9) 60%, rgba(255,107,154,.65));
+      border-radius:60% 60% 60% 60% / 70% 70% 30% 30%;
+      filter:drop-shadow(0 4px 8px rgba(0,0,0,.25));
+      animation: fall var(--dur) linear var(--delay) forwards, sway 2.6s ease-in-out var(--delay) infinite;
+      transform: rotate(var(--rot));
+    }
+    @keyframes fall{ to{ transform: translateY(110vh) rotate(var(--rot-end)); opacity:.98 } }
+    @keyframes sway{ 0%,100%{ margin-left:0 } 50%{ margin-left:16px } }
+
+    .wrap{
+      display:grid; gap:10px;
+      justify-items:center;
+      text-align:center;
+      width:100%;
+    }
+
+    /* 新增：关卡提示（图片正下方） */
+    #stageMsg{
+      margin-top:12px;
+      font-size:1.8rem;
+      font-weight:700;
+      color:var(--gold);
+      text-align:center;
+      text-shadow:0 2px 6px rgba(0,0,0,.45);
+      min-height:2.2em; /* 保留空间，避免布局跳动 */
+      display:flex; align-items:center; justify-content:center;
+    }
+
+    /* 按钮区域 */
+    .actions{
+      display:grid; gap:10px; justify-items:center; width:100%;
+    }
+    .btn{
+      appearance:none; border:none; cursor:pointer;
+      padding:10px 18px; border-radius:12px; font-weight:600; letter-spacing:.5px;
+      background:linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.02));
+      color:var(--ink);
+      border:1px solid rgba(255,255,255,.12);
+      box-shadow:0 8px 24px rgba(0,0,0,.35);
+      transition: transform .12s ease, box-shadow .12s ease, border-color .2s ease;
+    }
+    .btn:hover{ transform:translateY(-2px); box-shadow:0 12px 30px rgba(0,0,0,.45); border-color: rgba(255,217,102,.4) }
+  </style>
+</head>
+<body>
+  <div class="stars"></div>
+  <!-- Decorative floating lanterns -->
+  <div class="lantern" style="left:8%; animation-duration:28s; animation-delay:0s"></div>
+  <div class="lantern" style="left:22%; width:40px; height:52px; animation-duration:32s; animation-delay:4s"></div>
+  <div class="lantern" style="left:48%; width:50px; height:62px; animation-duration:26s; animation-delay:8s"></div>
+  <div class="lantern" style="left:66%; width:42px; height:54px; animation-duration:34s; animation-delay:2s"></div>
+  <div class="lantern" style="left:82%; width:44px; height:56px; animation-duration:30s; animation-delay:6s"></div>
+
+  <div class="wrap">
+    <div class="title">
+      <h1>七夕节礼物</h1>
+	<span class="seal">To My Beloved 哈尼</span>
+    </div>
+    <div class="sub" id="levelInfo"></div>
+    <div class="panel board" id="board"></div>
+    <!-- 关卡完成/游戏结束提示（图片正下方） -->
+    <div id="stageMsg"></div>
+    <div class="panel tray" id="tray"></div>
+
+    <!-- 通关按钮 -->
+    <div class="actions" id="actions"></div>
+  </div>
+
+  <script>
+  (function(){
+    const LEVELS = [
+      { img: 'image1.jpg', rows: 3, cols: 3, mode: 'puzzle' },
+      { img: 'image2.jpg', rows: 4, cols: 4, mode: 'puzzle' },
+      { img: 'image3.jpg', rows: 4, cols: 4, mode: 'puzzle' },
+      { img: 'image4.jpg', mode: 'final-only' }
+    ];
+
+    const board = document.getElementById('board');
+    const tray = document.getElementById('tray');
+    const levelInfo = document.getElementById('levelInfo');
+    const actions = document.getElementById('actions');
+    const stageMsg = document.getElementById('stageMsg');
+
+    let current = 0;
+    let rows = 3, cols = 3;
+    const TOTAL = ()=> rows*cols;
+
+    function setGridVars(r, c){
+      rows = r; cols = c;
+      document.documentElement.style.setProperty('--rows', r);
+      document.documentElement.style.setProperty('--cols', c);
+    }
+
+    function setLevelInfo(){
+      const L = LEVELS[current];
+      const idxText = `${current+1} / ${LEVELS.length}`;
+      if(L.mode === 'puzzle'){
+        levelInfo.textContent = ``;
+      } else {
+        levelInfo.textContent = ``;
+      }
+    }
+
+    function buildGrid(){
+      board.innerHTML = '';
+      if(LEVELS[current].mode === 'final-only'){
+        // 最终图不需要栅格
+        showFullImage(LEVELS[current].img);
+        return;
+      }
+      for(let i=0;i<TOTAL();i++){
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.dataset.index = i.toString();
+        addDropHandlers(cell);
+        board.appendChild(cell);
+      }
+    }
+
+    function addDropHandlers(el){
+      el.addEventListener('dragover', e=>{
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+      });
+      el.addEventListener('drop', e=>{
+        e.preventDefault();
+        const id = e.dataTransfer.getData('text/plain');
+        const piece = document.getElementById(id);
+        if(!piece) return;
+        if(el.classList.contains('cell')){
+          if(el.firstElementChild){
+            tray.appendChild(el.firstElementChild);
+          }
+          el.appendChild(piece);
+        } else if(el === tray){
+          tray.appendChild(piece);
+        }
+        checkWin();
+      });
+    }
+
+    function addDragHandlers(piece){
+      piece.draggable = true;
+      piece.addEventListener('dragstart', e=>{
+        e.dataTransfer.setData('text/plain', piece.id);
+        setTimeout(()=>piece.classList.add('hide'), 0);
+      });
+      piece.addEventListener('dragend', ()=> piece.classList.remove('hide'));
+    }
+
+    function shuffle(arr){
+      for(let i=arr.length-1;i>0;i--){
+        const j = Math.floor(Math.random()*(i+1));
+        [arr[i],arr[j]] = [arr[j],arr[i]];
+      }
+      return arr;
+    }
+
+    async function buildPieces(url){
+      tray.innerHTML='';
+      board.querySelectorAll('.cell').forEach(c=> c.innerHTML='');
+
+      const img = await loadImage(url);
+
+      const boardStyles = getComputedStyle(board);
+      const padding = parseFloat(boardStyles.paddingLeft);
+      const gap = parseFloat(boardStyles.gap);
+
+      const sampleCell = board.querySelector('.cell');
+      const cellBorder = sampleCell ? parseFloat(getComputedStyle(sampleCell).borderLeftWidth) || 0 : 0;
+
+      const boardContent = board.clientWidth - 2*padding - (cols-1)*gap - 2*cellBorder*cols;
+
+      const r = img.width / img.height; let bgW, bgH;
+      if(r >= 1){ bgH = boardContent; bgW = boardContent * r; }
+      else { bgW = boardContent; bgH = boardContent / r; }
+
+      const pieceWpx = boardContent / cols;
+      const pieceHpx = boardContent / rows;
+
+      const extraX = Math.max(0, (bgW - boardContent) / 2);
+      const extraY = Math.max(0, (bgH - boardContent) / 2);
+
+      const order = shuffle([...Array(TOTAL()).keys()]);
+      order.forEach(idx=>{
+        const piece = document.createElement('div');
+        piece.className = 'piece';
+        piece.id = 'piece_'+idx;
+        piece.dataset.correctIndex = idx.toString();
+
+        const y = Math.floor(idx/cols);
+        const x = idx % cols;
+
+        piece.style.backgroundImage = `url("${url}")`;
+        piece.style.backgroundSize = `${bgW}px ${bgH}px`;
+        const posX = -(x * pieceWpx + extraX);
+        const posY = -(y * pieceHpx + extraY);
+        piece.style.backgroundPosition = `${posX}px ${posY}px`;
+
+        addDragHandlers(piece);
+        tray.appendChild(piece);
+      });
+    }
+
+    function loadImage(src){
+      return new Promise((resolve, reject)=>{
+        const img = new Image();
+        img.onload = ()=> resolve(img);
+        img.onerror = reject;
+        img.src = src;
+      });
+    }
+
+    function checkWin(){
+      let correct = 0;
+      board.querySelectorAll('.cell').forEach(cell=>{
+        const piece = cell.firstElementChild;
+        if(piece && piece.dataset.correctIndex === cell.dataset.index){ correct++; }
+      });
+      if(correct === TOTAL()){
+        const { img } = LEVELS[current];
+        showFullImage(img);
+        tray.innerHTML='';
+        releasePetals(26);
+        // 显示通关信息与按钮，由用户点击推进
+        showCompletionUI();
+      }
+    }
+
+    function showFullImage(imgUrl){
+      board.innerHTML = '';
+      const final = document.createElement('div');
+      final.className = 'final';
+      final.style.backgroundImage = `url(${imgUrl})`;
+      board.appendChild(final);
+    }
+
+    function gotoLevel(index){
+      current = index;
+      startLevel();
+    }
+
+    function clearStageMsg(){
+      stageMsg.textContent = '';
+    }
+
+    function showCompletionUI(){
+      const stage = current + 1; // 1,2,3（第4是最终图）
+      clearStageMsg();
+      if(stage === 1){
+        stageMsg.textContent = 'The First Time We Met Was in the Summer of 2012, Your Smile is the Sweetest Thing in The Whole World.';
+        setActions('下一章', ()=> gotoLevel(1));
+      } else if(stage === 2){
+        stageMsg.textContent = 'Years Has Passed, I Have Finally Found You—and With You, the Love That Has Been Quietly Waiting Between Us For 13 years';
+        setActions('下一章', ()=> gotoLevel(2));
+      } else if(stage === 3){
+        stageMsg.textContent = 'Having You in My Life is the Happiest Thing I Could Ever Imagine.';
+        setActions('下一章', ()=> gotoLevel(3)); // 进入最终图
+      }
+    }
+
+    function setActions(btnLabel, onClick){
+      actions.innerHTML = '';
+      if(btnLabel && typeof onClick === 'function'){
+        const b = document.createElement('button');
+        b.className = 'btn';
+        b.textContent = btnLabel;
+        b.addEventListener('click', onClick);
+        actions.appendChild(b);
+      }
+    }
+
+    async function startLevel(){
+      const L = LEVELS[current];
+      setLevelInfo();
+      clearStageMsg();
+      actions.innerHTML = '';
+      if(L.mode === 'final-only'){
+        showFullImage(L.img);
+        tray.innerHTML='';
+        stageMsg.textContent = '七夕节快乐 我的哈尼，虽远隔千山万水，我们心心相印，如同牛郎织女相守千年'; // 最后一关显示游戏结束
+        return;
+      }
+      setGridVars(L.rows, L.cols);
+      buildGrid();
+      await buildPieces(L.img);
+      addDropHandlers(tray);
+    }
+
+    // Petal celebration
+    function releasePetals(n=18){
+      for(let i=0;i<n;i++){
+        const p = document.createElement('div');
+        p.className = 'petal';
+        const left = Math.random()*100; // vw
+        const dur = 6 + Math.random()*5; // seconds
+        const delay = Math.random()*0.8; // seconds
+        const rot = (Math.random()*120-60)+'deg';
+        const rotEnd = (Math.random()*180-90)+'deg';
+        p.style.left = left + 'vw';
+        p.style.setProperty('--dur', dur+'s');
+        p.style.setProperty('--delay', delay+'s');
+        p.style.setProperty('--rot', rot);
+        p.style.setProperty('--rot-end', rotEnd);
+        document.body.appendChild(p);
+        setTimeout(()=> p.remove(), (dur+1)*1000 );
+      }
+    }
+
+    startLevel();
+  })();
+  </script>
+</body>
+</html>
